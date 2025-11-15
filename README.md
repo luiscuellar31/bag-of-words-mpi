@@ -17,10 +17,17 @@ Proyecto base para construir una matriz documento–término desde archivos de t
 
 ## Cómo Usarlo
 - Coloca tus archivos `.txt` en `data/`.
-- Ejecuta el script de demo (recomendado): `NP=<#procesos> scripts/run_demo.sh`.
+- Ejecuta el script de demostración (recomendado):
+  ```bash
+  scripts/run_demo.sh              # usa NP=6 por defecto
+  NP=6 scripts/run_demo.sh         # especifica número de procesos
+  ```
 - El script compila, corre 3× serial y 3× MPI, genera `out/matriz.csv` y muestra `speedup=...`.
 - Usa `NP` igual al número de archivos (ejemplo: 6 libros → `NP=6`).
-- Ejecución manual:
+- Variables opcionales:
+  - `OUT=out/otra_matriz.csv` para cambiar la ruta del CSV.
+  - `MPIRUN_OPTS="..."` para pasar flags a `mpirun` si tu entorno lo requiere.
+- Ejecución manual (opcional):
   ```bash
   ./bin/bow_serial data/*.txt --out out/matriz.csv
   mpirun -np 6 ./bin/bow_mpi data/*.txt --out out/matriz.csv

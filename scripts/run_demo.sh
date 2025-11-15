@@ -1,48 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 NP="${NP:-6}"
-OUT="out/matriz.csv"
+MPIRUN_OPTS="${MPIRUN_OPTS:-}"
+OUT="${OUT:-out/matriz.csv}"
 FILES=(data/*.txt)
-if [ ${#FILES[@]} -eq 0 ]; then
+
+# Verifica archivos
+if [ ${#FILES[@]} -eq 0 ] || [ ! -e "${FILES[0]}" ]; then
   echo "No hay archivos en data/." >&2
   exit 1
 fi
+
+# Compila
 make -s serial mpi >/dev/null
-mkdir -p out
-sum=0
+mkdir -p "$(dirname "$OUT")"
+
+# Serial: 3 corridas
+sum=0.0
 for i in 1 2 3; do
   t=$(./bin/bow_serial "${FILES[@]}" --out "$OUT" | awk -F= '/time_sec/{print $2}')
-  sum=$(python3 - <<PY
-import sys
-print({} + float(sys.argv[1]))
-PY
-$sum $t)
+  : "${t:=0}"
+  sum=$(awk -v a="$sum" -v b="$t" 'BEGIN{printf "%.10f", a+b}')
 done
-ts=$(python3 - <<PY
-print(round(({})/3.0,6))
-PY
-$sum)
-sum=0
+ts=$(awk -v s="$sum" 'BEGIN{printf "%.6f", s/3.0}')
+
+# MPI: 3 corridas
+sum=0.0
+tmpfile=$(mktemp)
+trap 'rm -f "$tmpfile"' EXIT
 for i in 1 2 3; do
-  TSERIAL_SEC=$ts mpirun -np "$NP" ./bin/bow_mpi "${FILES[@]}" --out "$OUT" >/tmp/mpi_out.$$ 
-  t=$(awk -F= '/time_sec/{print $2}' /tmp/mpi_out.$$)
-  sum=$(python3 - <<PY
-import sys
-print({} + float(sys.argv[1]))
-PY
-$sum $t)
+  mpirun $MPIRUN_OPTS -np "$NP" ./bin/bow_mpi "${FILES[@]}" --out "$OUT" >"$tmpfile"
+  t=$(awk -F= '/time_sec/{print $2}' "$tmpfile")
+  : "${t:=0}"
+  sum=$(awk -v a="$sum" -v b="$t" 'BEGIN{printf "%.10f", a+b}')
 done
-tp=$(python3 - <<PY
-print(round(({})/3.0,6))
-PY
-$sum)
-speed=$(python3 - <<PY
-import sys
-ts, tp = map(float, sys.argv[1:3])
-print(round(ts/tp, 6) if tp>0 else 0)
-PY
-$ts $tp)
+tp=$(awk -v s="$sum" 'BEGIN{printf "%.6f", s/3.0}')
+
+# Speed-up
+speed=$(awk -v a="$ts" -v b="$tp" 'BEGIN{if (b>0) printf "%.6f", a/b; else print 0}')
+
 echo "serial_avg_sec=$ts"
 echo "mpi_avg_sec=$tp"
 echo "speedup=$speed"
-
