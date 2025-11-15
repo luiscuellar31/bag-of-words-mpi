@@ -1,0 +1,20 @@
+# Archivos generados y entornos locales (no subir a Git)
+
+# macOS / editores
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build (Makefile, C/C++/MPI)
+bin/
+build/
+out/
+*.o
+a.out
+
+# Logs y temporales
+*.log
+*.tmp
+*.cache
