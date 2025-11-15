@@ -56,4 +56,3 @@ int main(int argc, char** argv) {
     std::cout << "time_sec=" << (t1 - t0) << "\n";
     return 0;
 }
-

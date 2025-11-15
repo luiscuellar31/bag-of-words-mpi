@@ -53,6 +53,7 @@ int main(int argc, char** argv) {
         }
     }
     int Nall = rank==0 ? (int)files_all.size() : 0;
+    // difunde número de archivos
     MPI_Bcast(&Nall, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (Nall==0) {
         if (rank==0) std::cout << "time_sec=" << (now_sec()-t0) << "\n";
@@ -144,8 +145,10 @@ int main(int argc, char** argv) {
     std::vector<int> all_flat;
     if (rank==0) all_flat.assign(Dall*V, 0);
     MPI_Gatherv(my_flat.data(), Dloc*V, MPI_INT,
-                rank==0? all_flat.data():nullptr, recvcounts.data(), displs.data(), MPI_INT,
-                0, MPI_COMM_WORLD);
+                rank==0? all_flat.data():nullptr,
+                rank==0? recvcounts.data():nullptr,
+                rank==0? displs.data():nullptr,
+                MPI_INT, 0, MPI_COMM_WORLD);
     double t1 = now_sec();
     if (rank==0) {
         std::vector<std::string> docnames;
@@ -157,13 +160,6 @@ int main(int argc, char** argv) {
         write_csv(outpath, vocab, docnames, M);
         double parallel_sec = t1 - t0;
         std::cout << "time_sec=" << parallel_sec << "\n";
-        const char* ts = std::getenv("TSERIAL_SEC");
-        if (ts) {
-            try {
-                double tsd = std::stod(std::string(ts));
-                if (parallel_sec > 0) std::cout << "speedup=" << (tsd/parallel_sec) << "\n";
-            } catch (...) {}
-        }
     }
     MPI_Finalize();
     return 0;
