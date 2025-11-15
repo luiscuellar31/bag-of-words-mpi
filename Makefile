@@ -1,6 +1,6 @@
 CXX=g++
 MPICXX=mpic++
-CXXFLAGS=-O2 -std=gnu++20 -Wall -Wextra
+CXXFLAGS=-O3 -DNDEBUG -march=native -std=gnu++20 -Wall -Wextra
 INCLUDES=-Iinclude
 
 BIN_DIR=bin

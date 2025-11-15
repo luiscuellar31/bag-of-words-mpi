@@ -19,14 +19,15 @@ Proyecto base para construir una matriz documento–término desde archivos de t
 - Coloca tus archivos `.txt` en `data/`.
 - Ejecuta el script de demostración (recomendado):
   ```bash
-  scripts/run_demo.sh              # usa NP=6 por defecto
-  NP=6 scripts/run_demo.sh         # especifica número de procesos
+  scripts/run_demo.sh              # usa NP=3 por defecto
+  NP=3 scripts/run_demo.sh         # especifica número de procesos
   ```
-- El script compila, corre 3× serial y 3× MPI, genera `out/matriz.csv` y muestra `speedup=...`.
+- El script compila, corre RUNS× serial y RUNS× MPI (por defecto RUNS=100, configurable), genera `out/matriz.csv` y reporta `T_serial_avg_sec`, `T_paralelo_avg_sec(P=...)` y `speedup`.
 - Usa `NP` igual al número de archivos (ejemplo: 6 libros → `NP=6`).
 - Variables opcionales:
   - `OUT=out/otra_matriz.csv` para cambiar la ruta del CSV.
   - `MPIRUN_OPTS="..."` para pasar flags a `mpirun` si tu entorno lo requiere.
+  - `RUNS=3` (o cualquier entero ≥1) para ajustar el número de corridas promedio.
 - Ejecución manual (opcional):
   ```bash
   ./bin/bow_serial data/*.txt --out out/matriz.csv
@@ -42,7 +43,7 @@ Proyecto base para construir una matriz documento–término desde archivos de t
 - Salida:
   - Archivo CSV con la matriz documento–término (frecuencias enteras) en `out/matriz.csv` (o la ruta indicada con `--out`).
 - Métrica de desempeño:
-  - Speed-up = T_serial / T_paralelo, medido y reportado por `scripts/run_demo.sh` (promedios de 3 corridas).
+- Speed-up = T_serial / T_paralelo, medido y reportado por `scripts/run_demo.sh` (promedios de RUNS corridas, por defecto 100).
 
 ## Compilación
 - `make serial` genera `bin/bow_serial`
@@ -56,9 +57,9 @@ Proyecto base para construir una matriz documento–término desde archivos de t
 
 ## Medición de tiempo
 - Cada binario imprime el tiempo total en segundos como `time_sec=...`.
-- Script de demo: `scripts/run_demo.sh` compila, ejecuta 3 corridas serial y 3 corridas MPI, promedia tiempos y muestra el speed-up.
-- Uso: `NP=6 scripts/run_demo.sh` (ajusta `NP` al número de procesos deseado).
-- Salida del script: `serial_avg_sec=...`, `mpi_avg_sec=...`, `speedup=...`.
+- Script de demo: `scripts/run_demo.sh` compila, ejecuta RUNS corridas serial y RUNS corridas MPI (por defecto 100) y promedia los tiempos para reportar `speedup`.
+- Uso: `NP=<P> scripts/run_demo.sh` (ajusta `NP` al número de procesos deseado).
+- Salida del script: `runs=...`, `P=...`, `T_serial_avg_sec=...`, `T_paralelo_avg_sec(P=...)`, `speedup=...`.
 - Nota: el CSV `out/matriz.csv` se reescribe en cada corrida del demo.
 
 ## Datos de prueba
