@@ -4,7 +4,7 @@ set -euo pipefail
 NP="${NP:-3}"
 MPIRUN_OPTS="${MPIRUN_OPTS:-}"
 OUT="${OUT:-out/matriz.csv}"
-RUNS="${RUNS:-100}"
+RUNS="${RUNS:-10}"
 FILES=(data/*.txt)
 
 if [ "$RUNS" -lt 1 ]; then RUNS=1; fi

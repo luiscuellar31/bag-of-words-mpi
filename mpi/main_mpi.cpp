@@ -10,8 +10,13 @@
 #include "tokenize.hpp"
 #include "timer.hpp"
 
+// Versión paralela del programa:
+// reparte la lista de archivos entre varios procesos, cada uno cuenta palabras en sus documentos
+// y al final se junta todo en un archivo .csv con la tabla completa
 namespace {
 
+// Estructura para guardar un dato de la tabla:
+// qué documento es, qué palabra y cuántas veces aparece
 struct Triplet {
     int doc;
     int term;
@@ -24,6 +29,8 @@ std::string basename(const std::string& path) {
 }
 
 std::vector<std::string> blob_to_terms(const std::vector<char>& buf) {
+    // Convierte un bloque de caracteres en una lista de palabras,
+    // usando '\0' como separador interno entre ellas
     std::vector<std::string> terms;
     std::string cur;
     for (char c : buf) {
@@ -41,6 +48,9 @@ std::vector<std::string> blob_to_terms(const std::vector<char>& buf) {
 }
 
 std::vector<char> pack_terms(const std::vector<std::string>& terms) {
+    // Hace lo contrario: junta muchas palabras en un solo bloque de memoria
+    // y las separa internamente con '\0'
+    // Esto facilita enviarlas por MPI
     size_t total = 0;
     for (const auto& t : terms) total += t.size() + 1;
     std::vector<char> blob;
@@ -53,6 +63,8 @@ std::vector<char> pack_terms(const std::vector<std::string>& terms) {
 }
 
 void broadcast_files(std::vector<std::string>& files, int root) {
+    // El proceso 0 le pasa la lista de archivos a todos los demás procesos,
+    // para que todos sepan qué documentos existen
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     int count = rank == root ? static_cast<int>(files.size()) : 0;
@@ -73,6 +85,8 @@ void broadcast_files(std::vector<std::string>& files, int root) {
 }
 
 std::pair<int, int> doc_range(int total_docs, int world_size, int world_rank) {
+    // Decide qué documentos le tocan a cada proceso,
+    // intentando que todos tengan una cantidad similar de trabajo
     int base = total_docs / world_size;
     int extra = total_docs % world_size;
     int start = world_rank * base + std::min(world_rank, extra);
@@ -81,6 +95,8 @@ std::pair<int, int> doc_range(int total_docs, int world_size, int world_rank) {
 }
 
 std::unordered_map<std::string, int> bag_of_words(const std::string& path) {
+    // Abre un archivo de texto, lo separa en palabras
+    // y cuenta cuántas veces aparece cada una
     std::ifstream in(path, std::ios::binary);
     if (!in) return {};
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -94,16 +110,22 @@ std::unordered_map<std::string, int> bag_of_words(const std::string& path) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Arrancamos MPI (modo paralelo) y empezamos a medir el tiempo total
     MPI_Init(&argc, &argv);
-    int rank = 0, size = 1;
+    int rank = 0;
+    int size = 1;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     double t0 = now_sec();
 
+    // Nombre del archivo donde guardaremos la tabla final
+    // y lista de archivos de entrada
     std::string outpath = "out/matriz.csv";
     std::vector<std::string> files;
 
     if (rank == 0) {
+        // Solo el proceso 0 lee los argumentos de la consola,
+        // para evitar que todos hagan el mismo trabajo
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
             if (arg == "--out" && i + 1 < argc) {
@@ -114,15 +136,21 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Ahora el proceso 0 comparte esa lista con los demás,
+    // así todos conocen todos los documentos
     broadcast_files(files, 0);
     int total_docs = static_cast<int>(files.size());
 
+    // Si no nos pasaron archivos, no hay nada que hacer:
+    // medimos el tiempo y salimos
     if (total_docs == 0) {
         if (rank == 0) std::cout << "time_sec=" << (now_sec() - t0) << "\n";
         MPI_Finalize();
         return 0;
     }
 
+    // Aquí elegimos qué documentos le tocan a este proceso.
+    // La idea es que cada uno trabaje con una parte similar.
     auto [start_doc, end_doc] = doc_range(total_docs, size, rank);
     std::vector<int> my_doc_ids;
     std::vector<std::unordered_map<std::string, int>> my_dicts;
@@ -131,6 +159,8 @@ int main(int argc, char** argv) {
         my_dicts.push_back(bag_of_words(files[doc]));
     }
 
+    // De los documentos que le tocaron a este proceso
+    // sacamos la lista de palabras que aparecen, sin repetir
     std::vector<std::string> local_terms;
     size_t approx_terms = 0;
     for (const auto& dict : my_dicts) approx_terms += dict.size();
@@ -145,6 +175,8 @@ int main(int argc, char** argv) {
     int local_vocab_len = static_cast<int>(local_vocab_blob.size());
     std::vector<int> vocab_counts;
     if (rank == 0) vocab_counts.resize(size);
+    // El proceso 0 pregunta a cada proceso cuántos caracteres ocupan
+    // sus palabras empaquetadas, esto sirve para reservar la memoria justa.
     MPI_Gather(&local_vocab_len, 1, MPI_INT,
                rank == 0 ? vocab_counts.data() : nullptr, 1, MPI_INT,
                0, MPI_COMM_WORLD);
@@ -161,6 +193,8 @@ int main(int argc, char** argv) {
         gathered_vocab.resize(static_cast<size_t>(total_vocab_chars));
     }
 
+    // Reunimos en el proceso 0 todas las palabras de todos los procesos
+    // en un solo bloque de memoria
     MPI_Gatherv(local_vocab_blob.empty() ? nullptr : local_vocab_blob.data(),
                 local_vocab_len, MPI_CHAR,
                 rank == 0 ? (gathered_vocab.empty() ? nullptr : gathered_vocab.data()) : nullptr,
@@ -171,6 +205,9 @@ int main(int argc, char** argv) {
     std::vector<std::string> vocab;
     std::vector<char> vocab_blob;
     if (rank == 0) {
+        // Con todas esas palabras, el proceso 0 se queda solo con una vez cada una
+        // (sin duplicados), las ordena y las vuelve a empaquetar para
+        // enviarlas a todos los procesos
         vocab = blob_to_terms(gathered_vocab);
         std::sort(vocab.begin(), vocab.end());
         vocab.erase(std::unique(vocab.begin(), vocab.end()), vocab.end());
@@ -185,10 +222,14 @@ int main(int argc, char** argv) {
     }
     if (rank != 0) vocab = blob_to_terms(vocab_blob);
 
+    // Asignamos a cada palabra una posición de columna dentro de la tabla
+    // Todos los procesos usarán la misma numeración
     std::unordered_map<std::string, int> vidx;
     vidx.reserve(vocab.size() * 2 + 8);
     for (int j = 0; j < static_cast<int>(vocab.size()); ++j) vidx[vocab[j]] = j;
 
+    // Para cada documento local generamos "mini-registros" con:
+    // qué documento es, qué palabra y cuántas veces aparece
     std::vector<Triplet> local_entries;
     size_t sum_terms = 0;
     for (const auto& dict : my_dicts) sum_terms += dict.size();
@@ -214,6 +255,7 @@ int main(int argc, char** argv) {
     int local_triplet_count = static_cast<int>(local_entries.size());
     std::vector<int> triplet_counts;
     if (rank == 0) triplet_counts.resize(size);
+    // El proceso 0 pregunta a cada proceso cuántos registros generó en total
     MPI_Gather(&local_triplet_count, 1, MPI_INT,
                rank == 0 ? triplet_counts.data() : nullptr, 1, MPI_INT,
                0, MPI_COMM_WORLD);
@@ -235,6 +277,7 @@ int main(int argc, char** argv) {
         gathered_triplets.resize(static_cast<size_t>(offset));
     }
 
+    // Luego junta todos esos registros en un solo arreglo en el proceso 0
     MPI_Gatherv(local_triplet_buf.empty() ? nullptr : local_triplet_buf.data(),
                 static_cast<int>(local_triplet_buf.size()), MPI_INT,
                 rank == 0 ? (gathered_triplets.empty() ? nullptr : gathered_triplets.data()) : nullptr,
@@ -243,10 +286,14 @@ int main(int argc, char** argv) {
                 MPI_INT, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
+        // Sacamos solo el nombre de archivo (sin la ruta)
+        // para usarlo como etiqueta de fila en el .csv
         std::vector<std::string> docnames;
         docnames.reserve(total_docs);
         for (const auto& path : files) docnames.push_back(basename(path));
 
+        // Ordenamos los registros por documento y por palabra
+        // para que sea más fácil rellenar la tabla fila por fila
         std::vector<Triplet> all_entries;
         all_entries.reserve(static_cast<size_t>(total_triplets));
         for (int i = 0; i < total_triplets; ++i) {
@@ -261,6 +308,8 @@ int main(int argc, char** argv) {
                       return a.term < b.term;
                   });
 
+        // Recorremos documento por documento y vamos escribiendo la tabla:
+        // donde no hay registro, escribimos un 0
         std::ofstream out(outpath);
         out << "doc";
         for (const auto& term : vocab) out << "," << term;
@@ -287,6 +336,7 @@ int main(int argc, char** argv) {
             out << "\n";
         }
 
+        // Al final el proceso 0 muestra cuánto tardó todo el programa
         double elapsed = now_sec() - t0;
         std::cout << "time_sec=" << elapsed << "\n";
     }
